@@ -1,11 +1,12 @@
-from logical_template import valuePointer, logical
+from transaction_manager import valuePointer,logical
 import pickle
 
-class node:
+class BinaryNode:
     pass
 
-class nodePointer(valuePointer):
+class BinaryNodePointer(valuePointer):
     pass
 
 class Tree(logical):
-    pass
+    node_pointer = BinaryNodePointer
+    

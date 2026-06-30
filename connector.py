@@ -1,5 +1,5 @@
 import os
-from db_wrapper import API
+from db_parser import API
 
 class connect:
     def plug(dbName):
