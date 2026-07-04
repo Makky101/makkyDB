@@ -18,8 +18,6 @@ The project was adapted from the DBDB idea into the current MakkyDB file names a
 
 
 ## Demo
-[miniDatabase demo]
-
 https://github.com/user-attachments/assets/592646c4-3ba6-430d-bc67-ef96979a30cf
 
 
