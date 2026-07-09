@@ -1,5 +1,5 @@
 from storage_engine import storage
-from data_structure import Tree
+from data_structure import BTree
 
 
 class API:
@@ -8,7 +8,7 @@ class API:
     def __init__(self, file_obj):
         """Create the storage layer and load the tree wrapper for the file."""
         self.storage = storage(file_obj)
-        self.tree = Tree(self.storage)
+        self.tree = BTree(self.storage)
 
     def __setitem__(self, key, value):
         """Assign a value to a key in memory; call stamp() to persist it."""
