@@ -55,7 +55,7 @@ del db["name"]
 db.stamp()
 ```
 
-Important: writes and deletes are kept in memory until you call `stamp()`. The current API does not expose a `commit()` method.
+Important: writes and deletes are kept in memory until you call `stamp()`.
 
 ## CLI Usage
 
@@ -114,7 +114,3 @@ Deletion follows the same pattern, except `Tree.remove(...)` rebuilds the affect
 - The CLI help text and implemented command names are not aligned yet.
 - The CLI cannot choose a database file; it always uses `storage.mdb`.
 - The database file format is experimental and may change.
-
-## License
-
-See `LICENSE`.

@@ -83,9 +83,12 @@ class logical:
         if not self.dirty:
             self.reload_tree_pointer()
         self.tree_pointer = self.update(
+            self.storage,
             self.traverse(self.tree_pointer),
-            key,
-            self.value_pointer(memory_object=value)
+            self.data_node(
+                key,
+                self.value_pointer(memory_object=value)
+            )
         )
         self.dirty = True
 
