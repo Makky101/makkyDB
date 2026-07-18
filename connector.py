@@ -4,7 +4,15 @@ import os
 
 class connect:
     def plug(dbName="storage.mdb"):
-        """Open an existing database file or create it, then return the API."""
+        """
+        Open a database file for read/write access, creating it if necessary.
+        
+        Parameters:
+            dbName (str): Path to the database file.
+        
+        Returns:
+            API: An API instance wrapping the opened database file.
+        """
         try:
             file_obj = open(dbName, "r+b")
         except IOError:

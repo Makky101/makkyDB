@@ -19,9 +19,12 @@ class storage:
     }
 
     def __init__(self,file_obj):
-        """holds the file object, 
-        sets a boolean value to locked
-        and ensures there is a metablock space"""
+        """
+        Initialize storage with a file object and ensure the reserved metablock exists.
+        
+        Parameters:
+            file_obj: The file object used for binary storage.
+        """
 
         self.file_obj = file_obj
         self.locked = False
@@ -83,7 +86,16 @@ class storage:
     
     # reads raw binary data from disk
     def read_from_disk(self,obj_address,meta_data):
-        """Read a length-prefixed binary object from a disk address."""
+        """
+        Read and decode a length-prefixed binary object at a file address.
+        
+        Parameters:
+            obj_address (int): Byte offset of the object in the file.
+            meta_data (list): Field types describing how to decode the object.
+        
+        Returns:
+            list: Values decoded according to the provided field types.
+        """
         self.file_obj.seek(obj_address)
         binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'], self.file_obj.read(4))[0]
         data_list = self.deconstruct_binary_data(
@@ -97,6 +109,17 @@ class storage:
     # construct binary format
     @staticmethod
     def construct_binary_data(meta_data,binary_format,object_data):
+        """
+        Construct a length-prefixed binary representation of object data according to its metadata.
+        
+        Parameters:
+            meta_data: Field types describing the object data layout.
+            binary_format: Struct format strings used to encode each field.
+            object_data: Values to encode, including length-prefixed payloads for text fields.
+        
+        Returns:
+            bytes: The encoded object data prefixed with its binary length.
+        """
         binary_data = b''
         if 'NODE' in meta_data:
             binary_data = object_data
@@ -118,6 +141,18 @@ class storage:
     # deconstruct binary format
     @staticmethod
     def deconstruct_binary_data(meta_data,binary_length,binary_format,binary_data):
+        """
+        Decode binary data into values according to the specified metadata schema.
+        
+        Parameters:
+            meta_data (list): Field types describing the order and encoding of values.
+            binary_length (dict): Byte lengths for each field type.
+            binary_format (dict): Struct format strings for each field type.
+            binary_data (bytes): Encoded data to decode.
+        
+        Returns:
+            list: Decoded text, numeric, and boolean values in schema order.
+        """
         result = []
         offset1 = offset2 = 0
         for data in meta_data:
@@ -145,7 +180,15 @@ class storage:
 
     # writes raw binary data to disk
     def write_to_disk(self,payload):
-        """Append a length-prefixed binary object and return its address."""
+        """
+        Append a length-prefixed binary object to the storage file.
+        
+        Parameters:
+            payload (tuple): A metadata sequence and corresponding values used to encode the object.
+        
+        Returns:
+            int: The file address where the object was appended.
+        """
         self.lock_for_process()
         metadata, values = payload
         self.move_to_end()
@@ -175,7 +218,12 @@ class storage:
 
     # gets root address from the file
     def get_root_address(self):
-        """Read the current committed root address from the metablock."""
+        """
+        Read the committed root address stored in the metablock.
+        
+        Returns:
+        	list: A list containing the decoded root address.
+        """
         self.move_to_metablock()
         binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'],self.file_obj.read(4))[0]
         root_address = self.deconstruct_binary_data(['NUMBER'],self.BINARY_LENGTH,self.BINARY_FORMAT,self.file_obj.read(binary_length))

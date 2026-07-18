@@ -1,6 +1,13 @@
 class valuePointer:
     def __init__(self,memory_object=None,address=0,meta_data=None):
-        """Point to either an in-memory object or an object stored on disk."""
+        """
+        Initialize a pointer to an in-memory object or an object stored on disk.
+        
+        Parameters:
+            memory_object: Optional in-memory object referenced by the pointer.
+            address: Disk address of the referenced object.
+            meta_data: Metadata used to describe the stored object.
+        """
         self.address = address
         self.memory_object = memory_object if memory_object else None
         self.meta_data = meta_data if meta_data else []
@@ -14,7 +21,16 @@ class valuePointer:
     # serializes ram object to bytes
     @staticmethod
     def ingest_ram_object(meta_data,object_data):
-        """Only Converts a text and longtext value from memory into bytes for disk storage."""
+        """
+        Convert metadata-described in-memory values into disk-serializable values.
+        
+        Parameters:
+            meta_data (list): Type descriptors for the corresponding values.
+            object_data (list): Values to serialize; text values are encoded as UTF-8 bytes and number values are converted to integers in place.
+        
+        Returns:
+            tuple: The metadata and serialized object data as a tuple.
+        """
         for i in range(len(meta_data) - 1,-1,-1):
             if meta_data[i] == 'TEXT' or meta_data[i] == 'LONGTEXT':
                 binary_data = object_data[i].encode('utf-8')
@@ -30,12 +46,20 @@ class valuePointer:
     # deserializes bytes to ram object
     @staticmethod
     def fetch_ram_object(data):
-        """returns just the list of data"""
+        """
+        Return the provided data unchanged.
+        
+        Parameters:
+            data: The data to return.
+        
+        Returns:
+            The same data object provided as input.
+        """
         return data
 
     @property
     def _address(self):
-        """Expose the disk address used when serializing node pointers."""
+        """Expose the pointer's disk address."""
         return self.address
  
     # get the actual value from disk

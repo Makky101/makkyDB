@@ -6,12 +6,22 @@ class API:
     """Acts as the API between the user interface and the core logic."""
 
     def __init__(self, file_obj):
-        """Create the storage layer and load the tree wrapper for the file."""
+        """
+        Initialize storage and an in-memory tree backed by the provided file object.
+        
+        Parameters:
+            file_obj: File object used for persistent storage.
+        """
         self.storage = storage(file_obj)
         self.tree = BTree(self.storage)
 
     def __setitem__(self, key, value):
-        """Assign a value to a key in memory; call stamp() to persist it."""
+        """
+        Assign a value to a key in the in-memory tree.
+        
+        Raises:
+            ValueError: If the storage is closed.
+        """
         if self.storage.is_closed:
             raise ValueError("Storage is closed")
         return self.tree.assign(key, value)
