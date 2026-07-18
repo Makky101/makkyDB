@@ -1,13 +1,110 @@
 from transaction_manager import valuePointer,logical
+from operator import attrgetter
 import pickle
 
-class BinaryNode:
-    def __init__(self,key,valuePointer,leftPointer,rightPointer):
-        """Hold one key plus pointers to its value and child nodes."""
-        self.valuePointer = valuePointer
-        self.rightPointer = rightPointer
-        self.leftPointer = leftPointer
-        self.key = key
+
+# a small class that holds just the key and the valuepointer
+class DataNode:
+    def __init__(self,id_num,valuePointer):
+        self.ID = id_num
+        self.vp = valuePointer
+
+
+class NodePointer(valuePointer):
+    def store_child_pointers(self, storage):
+        """Persist child objects for a node pointer that still has RAM data."""
+        if self.memory_object:
+            self.memory_object.store_children(storage)
+
+    @staticmethod
+    def fetch_ram_object(metadata,data):
+        binary_data = pickle.loads(data)
+        pickled_data =  BTreeNode(
+            data_arr=binary_data['data_arr'],
+            children=[NodePointer(address=address_no) for address_no in binary_data['children_addresses']],
+            leaf=binary_data['leaf']
+        )
+
+        return (metadata,pickled_data)
+
+    @staticmethod
+    def ingest_ram_object(meta_data,object_string):
+        """Serialize a BinaryNode into a pickle record of key and addresses."""
+        object_data =  pickle.dumps({
+            'data_arr':object_string.data,
+            'children_addresses': [node_pointer._address for node_pointer in object_string.children],
+            'leaf':object_string.leaf
+        })
+
+        payload = (meta_data,object_data)
+        return payload
+
+class BTreeNode:
+    degree = 5
+    max_data = degree - 1
+    min_data = (max_data) / 2
+    node_pointer = NodePointer
+    
+    
+    def __init__(self,leaf=False,data_arr=None,children=None):
+        """Hold a max of 4 data_nodes and a min of 2 data_nodes plus pointers to its value except for the root node"""
+        self.data = data_arr if data_arr else  []
+        self.leaf = True if  not children else leaf
+        self.children = children if children else []
+
+    def add_data(self,data_node,storage):
+        # we have reached the bottom
+        if self.leaf:
+            self.data.append(data_node)
+            self.data.sort(key=attrgetter("ID"))
+            return self.leak(self.leaf)
+        else:
+            # recursively go down the root if it is not at the botto
+            position = 0
+            while position < len(self.data) and data_node.ID > self.data[position].ID:
+                position += 1
+            result = self.children[position].get_object(storage).add_data(data_node,storage)
+            if result is None:
+                return None
+            
+            self.absorb(result,position)
+
+            return self.leak(self.leaf)
+
+    # run when one of the child has separated to absorb the separator and handle children
+    def absorb(self,result,position):
+        separator,left_data,right_data = result
+        self.data.insert(position,separator[0])
+        self.children[position]=left_data 
+        self.children.insert(position+1,right_data)
+        
+    # decides if we should split or not:
+    def leak(self,leaf):
+        if len(self.data) > self.max_data:
+            return self.split(leaf)
+        else:
+            return None
+
+    def split(self,leaf):
+        left_data = self.node_pointer(
+            meta_data=['NODE'],
+            memory_object=BTreeNode(
+                leaf=leaf,
+                data_arr=self.data[:2],
+                children=self.children[:3] if self.children else []
+            )
+        )
+        right_data = self.node_pointer(
+            meta_data=['NODE'],
+            memory_object=BTreeNode(
+                leaf=leaf,
+                data_arr=self.data[3:],
+                children=self.children[3:] if self.children else []
+            )
+        )
+        separator = [self.data[2]]
+        return (separator,left_data,right_data)
+    
 
     def store_children(self,storage):
         """Persist this node's value and child nodes before storing the node."""
@@ -25,35 +122,11 @@ class BinaryNode:
             valuePointer=kwargs.get('valuePointer',node.valuePointer)
         )
 
-class NodePointer(valuePointer):
-    def store_child_pointers(self, storage):
-        """Persist child objects for a node pointer that still has RAM data."""
-        if self.memory_object:
-            self.memory_object.store_children(storage)
 
-    @staticmethod
-    def bytes_to_ram_object(byte_string):
-        """Deserialize a stored node record back into a BinaryNode."""
-        data = pickle.loads(byte_string)
-        return BinaryNode(
-            key=data['key'],
-            rightPointer=NodePointer(address=data['rightPointer']),
-            leftPointer=NodePointer(address=data['leftPointer']),
-            valuePointer=valuePointer(address=data['valuePointer'])
-        )
-
-    @staticmethod
-    def ram_object_to_bytes(object_string):
-        """Serialize a BinaryNode into a pickle record of key and addresses."""
-        return pickle.dumps({
-            'key':object_string.key,
-            'valuePointer':object_string.valuePointer._address,
-            'rightPointer': object_string.rightPointer._address,
-            'leftPointer':object_string.leftPointer._address
-        })
-
-class Tree(logical):
+class BTree(logical):
     node_pointer = NodePointer
+    data_node = DataNode
+    btree_node = BTreeNode
 
     def read(self,key,node):
         """Search the binary tree for a key and return its stored value."""
@@ -66,39 +139,23 @@ class Tree(logical):
                 return self.traverse(node.valuePointer)
         return None
 
-    def update(self,node,key,valuePointer):
+    def update(self,storage,root=None,data_node=None):
         """Insert or replace a key by returning a new node pointer path."""
-        if node is None:
-            new_node = BinaryNode(
-                key,
-                valuePointer,
-                self.node_pointer(),
-                self.node_pointer()
-            )
-        elif key < node.key:
-            new_node = BinaryNode.copy_node(
-                node=node,
-                leftPointer=self.update(
-                    self.traverse(node.leftPointer),
-                    key,
-                    valuePointer
-                )
-            )
-        elif node.key < key:
-            new_node = BinaryNode.copy_node(
-                node=node,
-                rightPointer=self.update(
-                    self.traverse(node.rightPointer),
-                    key,
-                    valuePointer
-                )
-            )
-        else:
-            new_node = BinaryNode.copy_node(
-                node=node,
-                valuePointer=valuePointer
-            )
-        return self.node_pointer(memory_object=new_node)
+        if root is None:
+            new_root = self.btree_node(data_arr=[data_node])
+            return self.node_pointer(memory_object=new_root)
+        
+        result = root.add_data(data_node,storage)
+        if result is None:
+            return self.node_pointer(memory_object=root)
+        
+        separator, left_data, right_data = result
+        new_root =  self.btree_node(
+            data_arr=separator,
+            children=[left_data,right_data]
+        )
+
+        return self.node_pointer(memory_object=new_root)
 
     def remove(self,node,key):
         """Delete a key and return the replacement subtree pointer."""
@@ -107,7 +164,7 @@ class Tree(logical):
 
         if key < node.key:
             return self.node_pointer(
-                memory_object=BinaryNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=node,
                     leftPointer=self.remove(
                         self.traverse(node.leftPointer),
@@ -118,7 +175,7 @@ class Tree(logical):
 
         if node.key < key:
             return self.node_pointer(
-                memory_object=BinaryNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=node,
                     rightPointer=self.remove(
                         self.traverse(node.rightPointer),
@@ -133,7 +190,7 @@ class Tree(logical):
         if left and right:
             successor, new_right = self.pop_min(node.rightPointer)
             return self.node_pointer(
-                memory_object=BinaryNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=successor,
                     leftPointer=node.leftPointer,
                     rightPointer=new_right
@@ -146,20 +203,3 @@ class Tree(logical):
         if right is None:
             return node.leftPointer
 
-
-    def pop_min(self,pointer):
-        """Remove and return the smallest node from a subtree."""
-        node = self.traverse(pointer)
-        if node is None:
-            raise KeyError("empty subtree")
-
-        if self.traverse(node.leftPointer) is None:
-            return node, node.rightPointer
-
-        successor, new_left = self.pop_min(node.leftPointer)
-        return successor, self.node_pointer(
-            memory_object=BinaryNode.copy_node(
-                node=node,
-                leftPointer=new_left
-            )
-        )
