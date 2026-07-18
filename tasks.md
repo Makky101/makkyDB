@@ -21,7 +21,7 @@ This part is done and understood — no more Socratic drilling needed on it.
 
 ## Open tasks
 
-### 1. Wire up `BTree`-level insert (small, ~5–6 lines)
+### ~~1. Wire up `BTree`-level insert (small, ~5–6 lines)~~
 `BTreeNode.add_data` has no concept of "root" — that's intentional. Add a
 method on `BTree` (in `transaction_manager.py` / replacing the old
 BST-era `assign`/`update` flow) that:
@@ -35,7 +35,7 @@ BST-era `assign`/`update` flow) that:
   `data=[separator]`, `children=[left, right]`) and make that the new
   `self.tree_pointer`.
 
-### 2. Pointer-based children (bigger redesign)
+### ~~2. Pointer-based children (bigger redesign)~~
 Right now `self.children` holds raw `BTreeNode` objects in memory. Needs to
 hold `NodePointer`-style wrappers instead (same idea as the old
 `leftPointer`/`rightPointer` pattern), so children can live on disk and load
@@ -57,13 +57,6 @@ all of `BTree.read` / `update` / `remove` / `pop_min` — these reference
 `node.key`, `node.leftPointer`, `node.rightPointer`, which don't exist on
 the current `BTreeNode`. Search/delete for the B-tree will need their own
 pass once insert is fully wired up.
-
-## Suggested order
-1. Finish task 1 (small, closes the loop on insert end-to-end).
-2. Test insert thoroughly — enough keys to trigger a leaf split, then enough
-   to trigger a cascading split up to a new root.
-3. Tackle task 2 (pointer-based children) as its own session.
-4. Task 3 (value typing) and task 4 (cleanup) after the tree shape is solid.
 
 ## Aside: CLI banner tooling (unrelated, for later reference)
 - Big ASCII banners: `pyfiglet` (Python)

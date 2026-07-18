@@ -1,8 +1,11 @@
 class valuePointer:
-    def __init__(self,memory_object=None,address=0):
+    def __init__(self,memory_object=None,address=0,meta_data=None):
         """Point to either an in-memory object or an object stored on disk."""
         self.address = address
-        self.memory_object = memory_object
+        self.memory_object = memory_object if memory_object else None
+        self.meta_data = meta_data if meta_data else []
+
+    
 
     def store_child_pointers(self,storage):
         """Stores child pointers before this object is stored."""
@@ -10,15 +13,25 @@ class valuePointer:
 
     # serializes ram object to bytes
     @staticmethod
-    def ram_object_to_bytes(object_string):
-        """Convert a string value from memory into bytes for disk storage."""
-        return object_string.encode('utf-8')
-    
+    def ingest_ram_object(meta_data,object_data):
+        """Only Converts a text and longtext value from memory into bytes for disk storage."""
+        for i in range(len(meta_data) - 1,-1,-1):
+            if meta_data[i] == 'TEXT' or meta_data[i] == 'LONGTEXT':
+                binary_data = object_data[i].encode('utf-8')
+                object_data[i] = (len(binary_data),binary_data)
+
+            elif meta_data[i] == 'NUMBER':
+                object_data[i] = int(object_data[i],10)
+
+        payload = (meta_data,object_data)
+        return payload
+
+
     # deserializes bytes to ram object
     @staticmethod
-    def bytes_to_ram_object(byte_string):
-        """Convert stored bytes back into a string value."""
-        return byte_string.decode('utf-8')
+    def fetch_ram_object(data):
+        """returns just the list of data"""
+        return data
 
     @property
     def _address(self):
@@ -29,9 +42,13 @@ class valuePointer:
     def get_object(self,storage):
         """Load the object from disk when needed and cache it in memory."""
         if self.memory_object is None and self.address:
-            self.memory_object = self.bytes_to_ram_object(
-                storage.read_from_disk(self.address)
+            self.memory_object = self.fetch_ram_object(
+                storage.read_from_disk(
+                    self.address,
+                    self.meta_data
+                )
             )
+        
         return self.memory_object
 
     # store value to disk
@@ -40,7 +57,7 @@ class valuePointer:
         if self.memory_object is not None and not self.address:
             self.store_child_pointers(storage)
             self.address = storage.write_to_disk(
-                self.ram_object_to_bytes(self.memory_object)
+                self.ingest_ram_object(self.meta_data,self.memory_object)
             )
 
 class logical:

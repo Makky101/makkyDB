@@ -3,8 +3,20 @@ import portalocker
 
 class storage:
     METABLOCK_SIZE = 4096
-    INTEGER_FORMAT = "!Q"
-    INTEGER_LENGTH = 8
+    BINARY_FORMAT = {
+        'NODE':"!Q",
+        'TEXT': "!H",
+        'NUMBER':"!I",
+        'LONGTEXT': "!I",
+        'BOOLEAN': "!?"
+    }
+    BINARY_LENGTH = {
+        'BOOLEAN': 1,
+        'NUMBER': 4,
+        'TEXT': 2,
+        'LONGTEXT': 4,
+        'NODE': 8
+    }
 
     def __init__(self,file_obj):
         """holds the file object, 
@@ -68,41 +80,77 @@ class storage:
         """Move the file cursor to the metadata/root-address area."""
         self.file_obj.seek(0)
         
-    # converts a numerical value to an unsigned 64 bit integer
-    def integer_to_bytes(self,integer):
-        """Pack an integer as an unsigned 64-bit big-endian byte string."""
-        return struct.pack(self.INTEGER_FORMAT,integer)
-    
-    # converts an unsigned 64 bit integer to a numerical value 
-    def bytes_to_integer(self,bytes):
-        """Unpack an unsigned 64-bit big-endian byte string into an integer."""
-        return struct.unpack(self.INTEGER_FORMAT,bytes)[0]
-
-    # writes the length of the serialized object data to disk
-    def write_integer(self,integer):
-        """Write an encoded integer at the current file cursor."""
-        self.file_obj.write(self.integer_to_bytes(integer))
-
-    # returns the deserialized object data from disk
-    def read_integer(self):
-        """Read and decode an integer from the current file cursor."""
-        return self.bytes_to_integer(self.file_obj.read(self.INTEGER_LENGTH))
     
     # reads raw binary data from disk
-    def read_from_disk(self,obj_address):
+    def read_from_disk(self,obj_address,meta_data):
         """Read a length-prefixed binary object from a disk address."""
         self.file_obj.seek(obj_address)
-        byte_length = self.read_integer()
-        binary_data = self.file_obj.read(byte_length)
+        binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'], self.file_obj.read(4))[0]
+        data_list = self.deconstruct_binary_data(
+            meta_data,
+            self.BINARY_LENGTH,
+            self.BINARY_FORMAT,
+            self.file_obj.read(binary_length)
+        )
+        return data_list
+
+    # construct binary format
+    @staticmethod
+    def construct_binary_data(meta_data,binary_format,object_data):
+        binary_data = b''
+        if 'NODE' in meta_data:
+            binary_data = object_data
+        else:
+            for data in range(len(meta_data)):
+                if meta_data[data] == "TEXT" or meta_data[data] == "LONGTEXT":
+                    binary_data += struct.pack(binary_format[data],object_data[data][0])
+                    binary_data += object_data[data][1]
+                elif meta_data[data] == "BOOLEAN":
+                    binary_data += struct.pack(binary_format[data],object_data[data])
+                elif meta_data[data] == "NUMBER":
+                    binary_data += struct.pack(binary_format[data],object_data[data])
+            
+        binary_length = struct.pack(binary_format["NUMBER"],len(binary_data))
+        binary_data = binary_length + binary_data
+
         return binary_data
 
+    # deconstruct binary format
+    @staticmethod
+    def deconstruct_binary_data(meta_data,binary_length,binary_format,binary_data):
+        result = []
+        offset1 = offset2 = 0
+        for data in meta_data:
+            if data == "TEXT" or data == "LONGTEXT":
+                offset2 += binary_length[data]
+                text_length = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
+                offset1 = offset2
+                offset2 += text_length
+                text_data = binary_data[offset1:offset2].decode('utf-8')
+                result.append(text_data)
+                offset1 = offset2
+            elif data == "NUMBER":
+                offset2 += binary_length[data]
+                number = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
+                offset1 = offset2
+                result.append(number)
+            elif data == "BOOLEAN":
+                offset2 += binary_length[data]
+                boolean = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
+                offset1 = offset2
+                result.append(boolean)
+        
+        return result
+
+
     # writes raw binary data to disk
-    def write_to_disk(self,binary_data):
+    def write_to_disk(self,payload):
         """Append a length-prefixed binary object and return its address."""
         self.lock_for_process()
+        metadata, values = payload
         self.move_to_end()
         obj_address = self.file_obj.tell()
-        self.write_integer(len(binary_data))
+        binary_data = self.construct_binary_data(metadata,self.BINARY_FORMAT,values)
         self.file_obj.write(binary_data)
         return obj_address
     
@@ -112,7 +160,12 @@ class storage:
         self.lock_for_process()
         self.file_obj.flush()
         self.move_to_metablock()
-        self.write_integer(address)
+        binary_data = self.construct_binary_data(
+            ['NUMBER'],
+            self.BINARY_FORMAT,
+            [address]
+        )
+        self.file_obj.write(binary_data)
         self.file_obj.flush()
         self.unlock()
 
@@ -124,7 +177,8 @@ class storage:
     def get_root_address(self):
         """Read the current committed root address from the metablock."""
         self.move_to_metablock()
-        root_address = self.read_integer()
+        binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'],self.file_obj.read(4))[0]
+        root_address = self.deconstruct_binary_data(['NUMBER'],self.BINARY_LENGTH,self.BINARY_FORMAT,self.file_obj.read(binary_length))
         return root_address
     
     @property

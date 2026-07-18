@@ -17,29 +17,34 @@ class NodePointer(valuePointer):
             self.memory_object.store_children(storage)
 
     @staticmethod
-    def bytes_to_ram_object(byte_string):
-        """Deserialize a stored node record back into a BinaryNode."""
-        binary_data = pickle.loads(byte_string)
-        return BTreeNode(
+    def fetch_ram_object(metadata,data):
+        binary_data = pickle.loads(data)
+        pickled_data =  BTreeNode(
             data_arr=binary_data['data_arr'],
             children=[NodePointer(address=address_no) for address_no in binary_data['children_addresses']],
             leaf=binary_data['leaf']
         )
 
+        return (metadata,pickled_data)
+
     @staticmethod
-    def ram_object_to_bytes(object_string):
+    def ingest_ram_object(meta_data,object_string):
         """Serialize a BinaryNode into a pickle record of key and addresses."""
-        return pickle.dumps({
+        object_data =  pickle.dumps({
             'data_arr':object_string.data,
             'children_addresses': [node_pointer._address for node_pointer in object_string.children],
             'leaf':object_string.leaf
         })
+
+        payload = (meta_data,object_data)
+        return payload
 
 class BTreeNode:
     degree = 5
     max_data = degree - 1
     min_data = (max_data) / 2
     node_pointer = NodePointer
+    
     
     def __init__(self,leaf=False,data_arr=None,children=None):
         """Hold a max of 4 data_nodes and a min of 2 data_nodes plus pointers to its value except for the root node"""
@@ -82,6 +87,7 @@ class BTreeNode:
 
     def split(self,leaf):
         left_data = self.node_pointer(
+            meta_data=['NODE'],
             memory_object=BTreeNode(
                 leaf=leaf,
                 data_arr=self.data[:2],
@@ -89,6 +95,7 @@ class BTreeNode:
             )
         )
         right_data = self.node_pointer(
+            meta_data=['NODE'],
             memory_object=BTreeNode(
                 leaf=leaf,
                 data_arr=self.data[3:],
@@ -119,6 +126,7 @@ class BTreeNode:
 class BTree(logical):
     node_pointer = NodePointer
     data_node = DataNode
+    btree_node = BTreeNode
 
     def read(self,key,node):
         """Search the binary tree for a key and return its stored value."""
@@ -134,7 +142,7 @@ class BTree(logical):
     def update(self,storage,root=None,data_node=None):
         """Insert or replace a key by returning a new node pointer path."""
         if root is None:
-            new_root = BTreeNode(data_arr=[data_node])
+            new_root = self.btree_node(data_arr=[data_node])
             return self.node_pointer(memory_object=new_root)
         
         result = root.add_data(data_node,storage)
@@ -142,15 +150,12 @@ class BTree(logical):
             return self.node_pointer(memory_object=root)
         
         separator, left_data, right_data = result
-        new_root =  BTreeNode(
+        new_root =  self.btree_node(
             data_arr=separator,
             children=[left_data,right_data]
         )
 
         return self.node_pointer(memory_object=new_root)
-    
-        
-
 
     def remove(self,node,key):
         """Delete a key and return the replacement subtree pointer."""
@@ -159,7 +164,7 @@ class BTree(logical):
 
         if key < node.key:
             return self.node_pointer(
-                memory_object=BTreeNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=node,
                     leftPointer=self.remove(
                         self.traverse(node.leftPointer),
@@ -170,7 +175,7 @@ class BTree(logical):
 
         if node.key < key:
             return self.node_pointer(
-                memory_object=BTreeNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=node,
                     rightPointer=self.remove(
                         self.traverse(node.rightPointer),
@@ -185,7 +190,7 @@ class BTree(logical):
         if left and right:
             successor, new_right = self.pop_min(node.rightPointer)
             return self.node_pointer(
-                memory_object=BTreeNode.copy_node(
+                memory_object=self.btree_node.copy_node(
                     node=successor,
                     leftPointer=node.leftPointer,
                     rightPointer=new_right
