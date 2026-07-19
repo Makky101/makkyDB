@@ -2,8 +2,8 @@ class valuePointer:
     def __init__(self,memory_object=None,address=0,meta_data=None):
         """Point to either an in-memory object or an object stored on disk."""
         self.address = address
-        self.memory_object = memory_object if memory_object else None
-        self.meta_data = meta_data if meta_data else []
+        self.memory_object = memory_object
+        self.meta_data = meta_data
 
     
 

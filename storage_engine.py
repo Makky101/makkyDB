@@ -18,7 +18,7 @@ class storage:
         'NODE': 8
     }
 
-    def __init__(self,file_obj):
+    def __init__(self,file_obj,metadata):
         """holds the file object, 
         sets a boolean value to locked
         and ensures there is a metablock space"""
@@ -26,6 +26,8 @@ class storage:
         self.file_obj = file_obj
         self.locked = False
         self.validate_metablock()
+        self.validate_metadata(metadata)
+
 
     # Ensures there is a metablock space
     def validate_metablock(self):
@@ -42,6 +44,27 @@ class storage:
     def is_locked(self):
         """Return whether this storage object currently holds the file lock."""
         return self.locked
+
+    # locate the metaspace
+    def seek_metaspace(self):
+        self.file_obj.seek(4)
+
+    # ensure meta_data in header the NODE type will be explicitly held in pointer
+    def validate_metadata(self,metadata):
+        self.seek_metaspace()
+        meta_list = ['TEXT'] * len(metadata)
+        binary_data = self.construct_binary_data(meta_list,self.BINARY_FORMAT,metadata,extra_data=True)
+        self.file_obj.write(binary_data)
+    
+    def read_metadata(self):
+        self.seek_metaspace()
+        data_length = self.read_binary_length()
+        binary_length = self.read_binary_length()
+        binary_data = self.file_obj.read(binary_length)
+        meta_list = ["TEXT"] * data_length
+        metadata =  self.deconstruct_binary_data(meta_list,self.BINARY_LENGTH,self.BINARY_FORMAT,binary_data)
+        return metadata
+
 
     # locks the file object if not
     def lock_for_process(self):
@@ -84,10 +107,12 @@ class storage:
     # reads raw binary data from disk
     def read_from_disk(self,obj_address,meta_data):
         """Read a length-prefixed binary object from a disk address."""
+        if not meta_data:
+            self.meta_data = self.read_metadata()
         self.file_obj.seek(obj_address)
         binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'], self.file_obj.read(4))[0]
         data_list = self.deconstruct_binary_data(
-            meta_data,
+            self.meta_data,
             self.BINARY_LENGTH,
             self.BINARY_FORMAT,
             self.file_obj.read(binary_length)
@@ -96,7 +121,7 @@ class storage:
 
     # construct binary format
     @staticmethod
-    def construct_binary_data(meta_data,binary_format,object_data):
+    def construct_binary_data(meta_data,binary_format,object_data,extra_data=False):
         binary_data = b''
         if 'NODE' in meta_data:
             binary_data = object_data
@@ -111,7 +136,11 @@ class storage:
                     binary_data += struct.pack(binary_format[data],object_data[data])
             
         binary_length = struct.pack(binary_format["NUMBER"],len(binary_data))
-        binary_data = binary_length + binary_data
+        if extra_data:
+            data_length = struct.pack(binary_format["NUMBER"],len(object_data))
+            binary_data = data_length + binary_length + binary_data
+        else:
+            binary_data = binary_length + binary_data
 
         return binary_data
 
@@ -173,12 +202,21 @@ class storage:
         """Backward-compatible wrapper around stamp_root_address()."""
         self.stamp_root_address(address)
 
+    def read_binary_length(self):
+        binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'],self.file_obj.read(4))[0]
+        return binary_length
+
     # gets root address from the file
     def get_root_address(self):
         """Read the current committed root address from the metablock."""
         self.move_to_metablock()
-        binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'],self.file_obj.read(4))[0]
-        root_address = self.deconstruct_binary_data(['NUMBER'],self.BINARY_LENGTH,self.BINARY_FORMAT,self.file_obj.read(binary_length))
+        binary_length = self.read_binary_length()
+        root_address = self.deconstruct_binary_data(
+            ['NUMBER'],
+            self.BINARY_LENGTH,
+            self.BINARY_FORMAT,
+            self.file_obj.read(binary_length)
+        )
         return root_address
     
     @property
