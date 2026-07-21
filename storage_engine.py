@@ -134,45 +134,42 @@ class storage:
     def construct_binary_data(meta_data,binary_format,object_data,extra_data=False):
         binary_data = b''
         if 'NODE' in meta_data:
-            binary_data = object_data
+            binary_data = object_data if isinstance(object_data,bytes) else bytes(object_data)
         else:
             for data in range(len(meta_data)):
                 meta_type = meta_data[data]
                 fmt = binary_format[meta_type]
                 if meta_type in ("TEXT","LONGTEXT"):
-                    binary_data += struct.pack(fmt,object_data[data][0])
-                    binary_data += object_data[data][1]
+                    binary_data += struct.pack(fmt,object_data[data][0]) + object_data[data][1]
                 elif meta_type in ("BOOLEAN","NUMBER"):
                     binary_data += struct.pack(fmt,object_data[data])
                 
         binary_length = struct.pack(binary_format["NUMBER"],len(binary_data))
         if extra_data:
             data_length = struct.pack(binary_format["NUMBER"],len(object_data))
-            binary_data = data_length + binary_length + binary_data
-        else:
-            binary_data = binary_length + binary_data
+            return data_length + binary_length + binary_data
 
-        return binary_data
+        return binary_length + binary_data
 
     # deconstruct binary format
     @staticmethod
     def deconstruct_binary_data(meta_data,binary_length,binary_format,binary_data):
         result = []
-        offset1 = offset2 = 0
+        offset = 0
         for data in meta_data:
+            length_offset = offset + binary_length[data]
+
+            unpacked_val = struct.unpack(binary_format[data], binary_data[offset:length_offset])[0]
+
             if data in ("TEXT","LONGTEXT"):
-                offset2 += binary_length[data]
-                text_length = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
-                offset1 = offset2
-                offset2 += text_length
-                text_data = binary_data[offset1:offset2].decode('utf-8')
-                result.append(text_data)
-                offset1 = offset2
+                offset = length_offset
+                length_offset += unpacked_val
+                result.append(binary_data[offset:length_offset].decode('utf-8'))
+            
             elif data in ("NUMBER","BOOLEAN"):
-                offset2 += binary_length[data]
-                res = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
-                offset1 = offset2
-                result.append(res)
+                result.append(unpacked_val)
+            
+            offset = length_offset
         
         return result
 
