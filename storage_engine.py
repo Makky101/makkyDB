@@ -47,14 +47,18 @@ class storage:
 
     # locate the metaspace
     def seek_metaspace(self):
-        self.file_obj.seek(4)
+        self.file_obj.seek(8)
 
     # ensure meta_data in header the NODE type will be explicitly held in pointer
     def validate_metadata(self,metadata):
         self.seek_metaspace()
         meta_list = ['TEXT'] * len(metadata)
-        binary_data = self.construct_binary_data(meta_list,self.BINARY_FORMAT,metadata,extra_data=True)
+        encoded_metadata = [(len(m.encode('utf-8')),(m.encode('utf-8'))) for m in metadata]
+        binary_data = self.construct_binary_data(meta_list,self.BINARY_FORMAT,encoded_metadata,extra_data=True)
         self.file_obj.write(binary_data)
+        self.file_obj.flush()
+        self.unlock
+
     
     def read_metadata(self):
         self.seek_metaspace()
@@ -108,11 +112,11 @@ class storage:
     def read_from_disk(self,obj_address,meta_data):
         """Read a length-prefixed binary object from a disk address."""
         if not meta_data:
-            self.meta_data = self.read_metadata()
+            meta_data = self.read_metadata()
         self.file_obj.seek(obj_address)
         binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'], self.file_obj.read(4))[0]
         data_list = self.deconstruct_binary_data(
-            self.meta_data,
+            meta_data,
             self.BINARY_LENGTH,
             self.BINARY_FORMAT,
             self.file_obj.read(binary_length)
@@ -217,7 +221,7 @@ class storage:
             self.BINARY_FORMAT,
             self.file_obj.read(binary_length)
         )
-        return root_address
+        return root_address[0] if root_address else 0
     
     @property
     def is_closed(self):
