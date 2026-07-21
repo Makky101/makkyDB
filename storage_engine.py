@@ -51,13 +51,19 @@ class storage:
 
     # ensure meta_data in header the NODE type will be explicitly held in pointer
     def validate_metadata(self,metadata):
+        self.lock_for_process()
+        self.seek_metaspace()
+        if self.read_binary_length() > 0:
+            self.unlock()
+            return
+        
         self.seek_metaspace()
         meta_list = ['TEXT'] * len(metadata)
         encoded_metadata = [(len(m.encode('utf-8')),(m.encode('utf-8'))) for m in metadata]
         binary_data = self.construct_binary_data(meta_list,self.BINARY_FORMAT,encoded_metadata,extra_data=True)
         self.file_obj.write(binary_data)
         self.file_obj.flush()
-        self.unlock
+        self.unlock()
 
     
     def read_metadata(self):
@@ -131,14 +137,14 @@ class storage:
             binary_data = object_data
         else:
             for data in range(len(meta_data)):
-                if meta_data[data] == "TEXT" or meta_data[data] == "LONGTEXT":
-                    binary_data += struct.pack(binary_format[data],object_data[data][0])
+                meta_type = meta_data[data]
+                fmt = binary_format[meta_type]
+                if meta_type in ("TEXT","LONGTEXT"):
+                    binary_data += struct.pack(fmt,object_data[data][0])
                     binary_data += object_data[data][1]
-                elif meta_data[data] == "BOOLEAN":
-                    binary_data += struct.pack(binary_format[data],object_data[data])
-                elif meta_data[data] == "NUMBER":
-                    binary_data += struct.pack(binary_format[data],object_data[data])
-            
+                elif meta_type in ("BOOLEAN","NUMBER"):
+                    binary_data += struct.pack(fmt,object_data[data])
+                
         binary_length = struct.pack(binary_format["NUMBER"],len(binary_data))
         if extra_data:
             data_length = struct.pack(binary_format["NUMBER"],len(object_data))
@@ -154,7 +160,7 @@ class storage:
         result = []
         offset1 = offset2 = 0
         for data in meta_data:
-            if data == "TEXT" or data == "LONGTEXT":
+            if data in ("TEXT","LONGTEXT"):
                 offset2 += binary_length[data]
                 text_length = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
                 offset1 = offset2
@@ -162,16 +168,11 @@ class storage:
                 text_data = binary_data[offset1:offset2].decode('utf-8')
                 result.append(text_data)
                 offset1 = offset2
-            elif data == "NUMBER":
+            elif data in ("NUMBER","BOOLEAN"):
                 offset2 += binary_length[data]
-                number = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
+                res = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
                 offset1 = offset2
-                result.append(number)
-            elif data == "BOOLEAN":
-                offset2 += binary_length[data]
-                boolean = struct.unpack(binary_format[data],binary_data[offset1:offset2])[0]
-                offset1 = offset2
-                result.append(boolean)
+                result.append(res)
         
         return result
 
