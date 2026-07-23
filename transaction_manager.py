@@ -37,12 +37,12 @@ class valuePointer:
     def _address(self):
         """Expose the disk address used when serializing node pointers."""
         return self.address
- 
+
     # get the actual value from disk
     def get_object(self,storage):
         """Load the object from disk when needed and cache it in memory."""
         if self.memory_object is None and self.address:
-            self.memory_object = self.fetch_ram_object(
+            self.meta_data, self.memory_object = self.fetch_ram_object(
                 storage.read_from_disk(
                     self.address,
                     self.meta_data

@@ -117,7 +117,7 @@ class storage:
     # reads raw binary data from disk
     def read_from_disk(self,obj_address,meta_data):
         """Read a length-prefixed binary object from a disk address."""
-        if not meta_data:
+        if meta_data is None:
             meta_data = self.read_metadata()
         self.file_obj.seek(obj_address)
         binary_length = struct.unpack(self.BINARY_FORMAT['NUMBER'], self.file_obj.read(4))[0]
@@ -127,14 +127,23 @@ class storage:
             self.BINARY_FORMAT,
             self.file_obj.read(binary_length)
         )
-        return data_list
+        return (meta_data,data_list)
 
     # construct binary format
     @staticmethod
     def construct_binary_data(meta_data,binary_format,object_data,extra_data=False):
         binary_data = b''
         if 'NODE' in meta_data:
-            binary_data = object_data if isinstance(object_data,bytes) else bytes(object_data)
+            fmt = binary_format['NUMBER']
+            # datanode count, datanode ->(ID,valupointer.address),children count, children -> address,leaf
+            for data in object_data:
+                if isinstance(data,tuple):
+                    binary_data += struct.pack(fmt,data[0])
+                    binary_data += struct.pack(fmt,data[1])
+                elif isinstance(data,bool):
+                    binary_data += struct.pack(binary_format["BOOLEAN"],data)
+                else:
+                    binary_data += struct.pack(fmt,data)    
         else:
             for data in range(len(meta_data)):
                 meta_type = meta_data[data]
@@ -156,22 +165,57 @@ class storage:
     def deconstruct_binary_data(meta_data,binary_length,binary_format,binary_data):
         result = []
         offset = 0
-        for data in meta_data:
-            length_offset = offset + binary_length[data]
-
-            unpacked_val = struct.unpack(binary_format[data], binary_data[offset:length_offset])[0]
-
-            if data in ("TEXT","LONGTEXT"):
-                offset = length_offset
-                length_offset += unpacked_val
-                result.append(binary_data[offset:length_offset].decode('utf-8'))
-            
-            elif data in ("NUMBER","BOOLEAN"):
-                result.append(unpacked_val)
-            
+        # datanode count, datanode ->(ID,valupointer.address),children count, children -> address,leaf
+        if "NODE" in meta_data:
+            length_offset = offset + binary_length["NUMBER"]
+            data_node_count = struct.unpack(binary_format["NUMBER"], binary_data[offset:length_offset])[0]
+            result.append(data_node_count)
             offset = length_offset
-        
-        return result
+
+            for _ in range(data_node_count):
+                length_offset = offset + binary_length["NUMBER"]
+                data_id = struct.unpack(binary_format["NUMBER"], binary_data[offset:length_offset])[0]
+                offset = length_offset
+                length_offset = offset + binary_length["NUMBER"]
+                vp_address = struct.unpack(binary_format["NUMBER"], binary_data[offset:length_offset])[0]
+                result.append((data_id,vp_address))
+                offset = length_offset
+
+            length_offset = offset + binary_length["NUMBER"]
+            children_count = struct.unpack(binary_format["NUMBER"], binary_data[offset:length_offset])[0]
+            result.append(children_count)
+            offset = length_offset
+
+            for _ in range(children_count):
+                length_offset = offset + binary_length["NUMBER"]
+                children_address = struct.unpack(binary_format["NUMBER"], binary_data[offset:length_offset])[0]
+                result.append(children_address)
+                offset = length_offset
+
+            length_offset = offset + binary_length["BOOLEAN"]
+            boolean = struct.unpack(binary_format["BOOLEAN"], binary_data[offset:length_offset])[0]
+            result.append(boolean)
+            offset = length_offset
+
+            return result
+
+        else:
+            for data in meta_data:
+                length_offset = offset + binary_length[data]
+
+                unpacked_val = struct.unpack(binary_format[data], binary_data[offset:length_offset])[0]
+
+                if data in ("TEXT","LONGTEXT"):
+                    offset = length_offset
+                    length_offset += unpacked_val
+                    result.append(binary_data[offset:length_offset].decode('utf-8'))
+                
+                elif data in ("NUMBER","BOOLEAN"):
+                    result.append(unpacked_val)
+                
+                offset = length_offset
+            
+            return result
 
 
     # writes raw binary data to disk
@@ -213,6 +257,8 @@ class storage:
         """Read the current committed root address from the metablock."""
         self.move_to_metablock()
         binary_length = self.read_binary_length()
+        if binary_length == 0:
+            return 0
         root_address = self.deconstruct_binary_data(
             ['NUMBER'],
             self.BINARY_LENGTH,
