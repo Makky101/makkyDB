@@ -1,14 +1,16 @@
 from transaction_manager import valuePointer,logical
 from operator import attrgetter
-import pickle
 
 
 # a small class that holds just the key and the valuepointer
 class DataNode:
     def __init__(self,id_num,valuePointer):
-        self.ID = id_num
+        self.id = id_num
         self.vp = valuePointer
 
+    @property
+    def packed_data(self):
+        return (self.id,self.vp._address)
 
 class NodePointer(valuePointer):
     def store_child_pointers(self, storage):
@@ -17,26 +19,61 @@ class NodePointer(valuePointer):
             self.memory_object.store_children(storage)
 
     @staticmethod
-    def fetch_ram_object(metadata,data):
-        binary_data = pickle.loads(data)
-        pickled_data =  BTreeNode(
-            data_arr=binary_data['data_arr'],
-            children=[NodePointer(address=address_no) for address_no in binary_data['children_addresses']],
-            leaf=binary_data['leaf']
-        )
+    def fetch_ram_object(data):
+        object_data = data[1]
+        data_arr = []
+        children_pointers = []
+        leaf = False
 
-        return (metadata,pickled_data)
+        key_count = object_data[0]
+
+        start,finish = 1, key_count + 1
+        for i in range(start,finish):
+            data_node = DataNode(object_data[i][0],valuePointer(address=object_data[i][1]))
+            data_arr.append(data_node)
+
+        children_count = object_data[key_count+1]
+
+        start,finish = key_count+2,key_count+2+children_count
+        for i in range(start,finish):
+            node_pointer = NodePointer(address=object_data[i]) 
+            children_pointers.append(node_pointer)
+
+        leaf = object_data[-1]
+        
+        B_data = BTreeNode(
+            data_arr=data_arr,
+            children=children_pointers,
+            leaf=leaf
+        )
+        metadata = data[0] 
+        return (metadata,B_data)
+
+    def get_object(self,storage):
+        """Load the object from disk when needed and cache it in memory."""
+        if self.memory_object is None and self.address:
+            self.meta_data, self.memory_object = self.fetch_ram_object(
+                storage.read_from_disk(
+                    self.address,
+                    ["NODE"]   
+                )
+            )# I explicitly set to Node and yes I write my code by hand with my own logic
+            # so it is not pretty 🥀
+        
+        return self.memory_object
 
     @staticmethod
     def ingest_ram_object(meta_data,object_string):
-        """Serialize a BinaryNode into a pickle record of key and addresses."""
-        object_data =  pickle.dumps({
-            'data_arr':object_string.data,
-            'children_addresses': [node_pointer._address for node_pointer in object_string.children],
-            'leaf':object_string.leaf
-        })
+        """Serialize a BinaryNode"""
+        # key count,keys,children count,children,leaf
+        package = []
+        package.append(len(object_string.data))
+        package.extend([node.packed_data for node in object_string.data])
+        package.append(len(object_string.children))
+        package.extend([node_pointer._address for node_pointer in object_string.children])
+        package.append(object_string.leaf)
+        payload = (meta_data,package)
 
-        payload = (meta_data,object_data)
         return payload
 
 class BTreeNode:
@@ -52,16 +89,20 @@ class BTreeNode:
         self.leaf = True if  not children else leaf
         self.children = children if children else []
 
+    @property
+    def _leaf(self):
+        return self.leaf
+    
     def add_data(self,data_node,storage):
         # we have reached the bottom
         if self.leaf:
             self.data.append(data_node)
-            self.data.sort(key=attrgetter("ID"))
+            self.data.sort(key=attrgetter("id"))
             return self.leak(self.leaf)
         else:
             # recursively go down the root if it is not at the botto
             position = 0
-            while position < len(self.data) and data_node.ID > self.data[position].ID:
+            while position < len(self.data) and data_node.id > self.data[position].id:
                 position += 1
             result = self.children[position].get_object(storage).add_data(data_node,storage)
             if result is None:
@@ -71,6 +112,11 @@ class BTreeNode:
 
             return self.leak(self.leaf)
 
+    @property
+    def data_length(self):
+        return len(self.data)
+
+    
     # run when one of the child has separated to absorb the separator and handle children
     def absorb(self,result,position):
         separator,left_data,right_data = result
@@ -129,15 +175,20 @@ class BTree(logical):
     btree_node = BTreeNode
 
     def read(self,key,node):
-        """Search the binary tree for a key and return its stored value."""
-        while node:
-            if key < node.key:
-                node = self.traverse(node.leftPointer)
-            elif node.key < key:
-                node = self.traverse(node.rightPointer)
-            else:
-                return self.traverse(node.valuePointer)
-        return None
+        if node is None:
+            return None
+
+        position = 0
+        while position < node.data_length and key > node.data[position].id:
+            position += 1
+
+        if position < node.data_length and node.data[position].id == key:
+            return self.traverse(node.data[position].vp)
+
+        if node._leaf:
+            return None
+
+        return self.read(key,self.traverse(node.children[position]))
 
     def update(self,storage,root=None,data_node=None):
         """Insert or replace a key by returning a new node pointer path."""
