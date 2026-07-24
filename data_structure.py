@@ -89,6 +89,10 @@ class BTreeNode:
         self.leaf = True if  not children else leaf
         self.children = children if children else []
 
+    @property
+    def _leaf(self):
+        return self.leaf
+    
     def add_data(self,data_node,storage):
         # we have reached the bottom
         if self.leaf:
@@ -108,6 +112,11 @@ class BTreeNode:
 
             return self.leak(self.leaf)
 
+    @property
+    def data_length(self):
+        return len(self.data)
+
+    
     # run when one of the child has separated to absorb the separator and handle children
     def absorb(self,result,position):
         separator,left_data,right_data = result
@@ -166,15 +175,20 @@ class BTree(logical):
     btree_node = BTreeNode
 
     def read(self,key,node):
-        """Search the binary tree for a key and return its stored value."""
-        while node:
-            if key < node.key:
-                node = self.traverse(node.leftPointer)
-            elif node.key < key:
-                node = self.traverse(node.rightPointer)
-            else:
-                return self.traverse(node.valuePointer)
-        return None
+        if node is None:
+            return None
+
+        position = 0
+        while position < node.data_length and key > node.data[position].id:
+            position += 1
+
+        if position < node.data_length and node.data[position].id == key:
+            return self.traverse(node.data[position].vp)
+
+        if node._leaf:
+            return None
+
+        return self.read(key,self.traverse(node.children[position]))
 
     def update(self,storage,root=None,data_node=None):
         """Insert or replace a key by returning a new node pointer path."""
